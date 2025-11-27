@@ -100,22 +100,22 @@ export const generateTrainingQuiz = async (
   
   const randomSeed = Math.floor(Math.random() * 10000);
 
-  // Dynamic Difficulty Adjustment logic
-  let difficultyInstruction = "Generate 1 'easy', 1 'medium', and 1 'hard' question to progressively test the student.";
+  // Dynamic Difficulty Adjustment logic for 5 questions
+  let difficultyInstruction = "Generate 1 'easy', 3 'medium', and 1 'hard' question to progressively test the student.";
   
   if (currentScore !== undefined) {
     if (currentScore < 60) {
-      difficultyInstruction = `The student scored ${currentScore}/100 (Weak). Generate 2 'easy' questions and 1 'medium' question. Focus on building confidence and basic concepts.`;
+      difficultyInstruction = `The student scored ${currentScore}/100 (Weak). Generate 2 'easy' questions and 3 'medium' questions. Focus on building confidence and basic concepts.`;
     } else if (currentScore >= 60 && currentScore < 85) {
-      difficultyInstruction = `The student scored ${currentScore}/100 (Average). Generate 1 'easy', 1 'medium', and 1 'hard' question to challenge them further.`;
+      difficultyInstruction = `The student scored ${currentScore}/100 (Average). Generate 1 'easy', 2 'medium', and 2 'hard' questions to challenge them further.`;
     } else {
-      difficultyInstruction = `The student scored ${currentScore}/100 (Strong). Generate 1 'medium' and 2 'hard' questions. Focus on advanced application and pitfalls.`;
+      difficultyInstruction = `The student scored ${currentScore}/100 (Strong). Generate 1 'medium' and 4 'hard' questions. Focus on advanced application and pitfalls.`;
     }
   }
 
   const prompt = `
     You are an expert junior high school tutor.
-    Create a set of 3 multiple-choice practice questions (Single Choice) for a student in ${grade} studying ${subject}.
+    Create a set of 5 multiple-choice practice questions (Single Choice) for a student in ${grade} studying ${subject}.
     
     Target Topic: "${weakPoint}".
     ${learningGoal ? `Target Learning Goal: "${learningGoal}".` : ''}
