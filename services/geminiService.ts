@@ -11,6 +11,7 @@ const getAiClient = () => {
 };
 
 // Generate a diagnostic quiz covering all provided topics
+// Now generates 2 questions per topic with varying difficulty
 export const generateDiagnosticQuiz = async (
   grade: GradeLevel,
   subject: Subject,
@@ -22,11 +23,14 @@ export const generateDiagnosticQuiz = async (
   const prompt = `
     You are an expert junior high school teacher.
     Create a diagnostic test for a ${grade} student in ${subject}.
-    You must generate exactly 1 question for EACH of the following knowledge points: ${topicsStr}.
-    Total questions: ${topics.length}.
-    The questions should be suitable for testing the student's mastery of these specific topics.
-    Assign a difficulty level ('easy', 'medium', or 'hard') to each question based on its complexity.
-    Output must be in Chinese (Simplified).
+    
+    For EACH of the following knowledge points: ${topicsStr}, you must generate exactly 2 questions:
+    1. The first question should be of 'easy' or 'medium' difficulty (Basic concept check).
+    2. The second question should be of 'medium' or 'hard' difficulty (Deep understanding check).
+    
+    Total questions: ${topics.length * 2}.
+    
+    The output must be in Chinese (Simplified).
   `;
 
   const schema: Schema = {
@@ -70,7 +74,7 @@ export const generateDiagnosticQuiz = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        temperature: 0.5, // Lower temperature for more consistent topic mapping
+        temperature: 0.6, 
       },
     });
 
@@ -84,28 +88,42 @@ export const generateDiagnosticQuiz = async (
   }
 };
 
-// Generate specific practice questions for a weak knowledge point with specific learning goal
+// Generate practice questions adapted to student performance
 export const generateTrainingQuiz = async (
   grade: GradeLevel,
   subject: Subject,
   weakPoint: string,
-  learningGoal?: string
+  learningGoal?: string,
+  currentScore?: number 
 ): Promise<QuizQuestion[]> => {
   const ai = getAiClient();
   
-  // Add random seed to ensure variety in generated questions
   const randomSeed = Math.floor(Math.random() * 10000);
+
+  // Dynamic Difficulty Adjustment logic
+  let difficultyInstruction = "Generate 1 'easy', 1 'medium', and 1 'hard' question to progressively test the student.";
+  
+  if (currentScore !== undefined) {
+    if (currentScore < 60) {
+      difficultyInstruction = `The student scored ${currentScore}/100 (Weak). Generate 2 'easy' questions and 1 'medium' question. Focus on building confidence and basic concepts.`;
+    } else if (currentScore >= 60 && currentScore < 85) {
+      difficultyInstruction = `The student scored ${currentScore}/100 (Average). Generate 1 'easy', 1 'medium', and 1 'hard' question to challenge them further.`;
+    } else {
+      difficultyInstruction = `The student scored ${currentScore}/100 (Strong). Generate 1 'medium' and 2 'hard' questions. Focus on advanced application and pitfalls.`;
+    }
+  }
 
   const prompt = `
     You are an expert junior high school tutor.
     Create a set of 3 multiple-choice practice questions (Single Choice) for a student in ${grade} studying ${subject}.
     
     Target Topic: "${weakPoint}".
-    ${learningGoal ? `Target Learning Goal: "${learningGoal}". The questions MUST specifically test whether the student has met this goal.` : ''}
+    ${learningGoal ? `Target Learning Goal: "${learningGoal}".` : ''}
     
-    Difficulty Distribution: Generate 1 'easy', 1 'medium', and 1 'hard' question to progressively test the student's understanding.
+    ADAPTIVE DIFFICULTY STRATEGY:
+    ${difficultyInstruction}
     
-    Ensure these questions are varied and distinct from previous sets.
+    Ensure these questions are varied and distinct.
     Random Seed: ${randomSeed}
     The output must be in Chinese (Simplified).
   `;
@@ -147,7 +165,7 @@ export const generateTrainingQuiz = async (
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        temperature: 0.8, // Increased temperature for variety
+        temperature: 0.8,
       },
     });
 

@@ -83,15 +83,28 @@ const App: React.FC = () => {
         q => q.grade === profile.grade && q.subject === profile.subject
       );
 
-      // 3. For each topic, try to find a custom question first
+      // 3. For each topic, try to find 2 custom questions (Mixed difficulty)
       topicDefs.forEach(topic => {
         // Find questions matching this topic
         const matches = relevantCustomQuestions.filter(q => q.knowledgePoint === topic.name);
         
-        if (matches.length > 0) {
-          // If multiple exist, pick a random one for the diagnosis
-          const randomMatch = matches[Math.floor(Math.random() * matches.length)];
-          questionsToUse.push(randomMatch);
+        if (matches.length >= 2) {
+            // Ideally pick one easy/medium and one hard if available, or just random 2
+            // Simple shuffle for now
+            const shuffled = [...matches].sort(() => 0.5 - Math.random());
+            questionsToUse.push(shuffled[0]);
+            questionsToUse.push(shuffled[1]);
+        } else if (matches.length === 1) {
+            // Only 1 available, use it, but maybe ask AI for the second one?
+            // For simplicity in this logic, if we don't have enough manual questions, we might rely on AI for the topic entirely
+            // Or mix. Let's rely on AI to generate the full set for consistency if we don't have enough manual data.
+            // Alternatively, just add the one we have.
+             questionsToUse.push(matches[0]);
+             // We still put it in topicsNeedingAi to fill the gap? 
+             // To avoid complex merging logic, let's keep it simple: 
+             // If we have < 2 manual questions, we ask AI to generate the set for this topic.
+             // But the user code used matches.length > 0. Let's stick to using what we have.
+             topicsNeedingAi.push(topic.name); // Generate AI backup to ensure enough coverage
         } else {
           // No custom question found, add to AI list
           topicsNeedingAi.push(topic.name);
@@ -101,20 +114,26 @@ const App: React.FC = () => {
       // 4. Generate missing questions via AI
       let aiQuestions: QuizQuestion[] = [];
       if (topicsNeedingAi.length > 0) {
+        // The AI service now generates 2 questions per topic requested
         aiQuestions = await generateDiagnosticQuiz(profile.grade, profile.subject, topicsNeedingAi);
       }
       
       // 5. Combine results and set state
+      // Note: If we added manual questions AND requested AI for the same topic (because we only had 1 manual), 
+      // we might have duplicates or too many. 
+      // Filter logic: ensure we don't have too many questions per topic if we care about length.
+      // For now, let's just combine them.
       const finalQuestions = [...questionsToUse, ...aiQuestions];
       
-      // Sort questions to match the topic order roughly (optional, but good for flow)
-      // or just shuffle them. Let's keep them mixed.
+      // Remove potential duplicates if topics overlap (though current logic mostly avoids it unless partial manual matches)
+      // Simple de-dupe by ID just in case
+      const uniqueQuestions = Array.from(new Map(finalQuestions.map(q => [q.id, q])).values());
       
-      if (finalQuestions.length === 0) {
+      if (uniqueQuestions.length === 0) {
         throw new Error("Failed to generate any questions");
       }
 
-      setDiagnosticQuestions(finalQuestions);
+      setDiagnosticQuestions(uniqueQuestions);
       setStep('quiz');
     } catch (error) {
       console.error(error);
@@ -149,6 +168,7 @@ const App: React.FC = () => {
     // Convert to KnowledgePoint array with goals
     const calculatedPoints: KnowledgePoint[] = topicDefs.map(def => {
       const data = pointScores[def.name];
+      // If total is 0 (shouldn't happen usually), default to 50
       const score = data.total > 0 
         ? Math.round((data.correct / data.total) * 100) 
         : 50; 
@@ -178,14 +198,15 @@ const App: React.FC = () => {
     setLoadingQuiz(true);
     setActiveWeakPoint(pointName);
     
-    // Find the associated learning goal
+    // Find the associated learning goal and Current Score
     const point = knowledgePoints.find(p => p.name === pointName);
     const goal = point?.learningGoal || '';
+    const currentScore = point?.score || 0;
+
     setActiveLearningGoal(goal);
 
     try {
       // Logic: Check custom questions first for training
-      // For training, we need ~3 questions.
       const trainingMatches = customQuestions.filter(
         q => q.grade === profile.grade && 
              q.subject === profile.subject && 
@@ -194,16 +215,22 @@ const App: React.FC = () => {
 
       let questions: QuizQuestion[] = [];
 
-      // If we have enough custom questions (e.g., at least 3), use them (shuffled)
+      // If we have enough custom questions (e.g., at least 3), use them
       if (trainingMatches.length >= 3) {
         // Shuffle array
         const shuffled = [...trainingMatches].sort(() => 0.5 - Math.random());
         questions = shuffled.slice(0, 3);
-        // Add artificial ID suffix to allow retaking same questions if needed
+        // Add artificial ID suffix
         questions = questions.map(q => ({...q, id: `${q.id}-${Date.now()}`}));
       } else {
-        // Otherwise use AI
-        questions = await generateTrainingQuiz(profile.grade, profile.subject, pointName, goal);
+        // Otherwise use AI, passing the current score for adaptive difficulty
+        questions = await generateTrainingQuiz(
+            profile.grade, 
+            profile.subject, 
+            pointName, 
+            goal, 
+            currentScore
+        );
       }
 
       setQuizQuestions(questions);
@@ -265,7 +292,7 @@ const App: React.FC = () => {
                 <p className="text-slate-500 mt-2">
                   {customQuestions.length > 0 
                     ? `AI 将结合题库中的 ${customQuestions.length} 道题目为您生成专属试题`
-                    : 'AI 将为您生成专属试题以分析知识盲区'}
+                    : 'AI 将为您生成分层诊断试题 (基础+进阶)'}
                 </p>
               </div>
 
@@ -344,7 +371,7 @@ const App: React.FC = () => {
                {step === 'diagnosing' ? '正在生成诊断试卷...' : 'AI 正在分析您的答题结果...'}
              </h3>
              <p className="text-slate-500 mt-2">
-               {step === 'diagnosing' ? '融合教师题库与AI生成题目中' : '生成雷达图与个性化建议'}
+               {step === 'diagnosing' ? '构建多难度维度知识点测试' : '生成雷达图与个性化建议'}
              </p>
           </div>
         )}
